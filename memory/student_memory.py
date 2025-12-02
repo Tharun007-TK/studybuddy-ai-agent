@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -20,6 +20,7 @@ class QuizRecord:
     score: float
     date: str
     questions_answered: int
+    answers: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass
@@ -33,6 +34,11 @@ class StudentProfile:
     completed_topics: List[str] = field(default_factory=list)
     current_goals: List[str] = field(default_factory=list)
     total_study_time_minutes: int = 0
+    xp: int = 0
+    streak: int = 0
+    last_study_date: Optional[str] = None
+    badges: List[str] = field(default_factory=list)
+    srs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize profile to a JSON‑serializable dict."""
@@ -46,12 +52,18 @@ class StudentProfile:
                     "score": q.score,
                     "date": q.date,
                     "questions_answered": q.questions_answered,
+                    "answers": q.answers,
                 }
                 for q in self.quiz_history
             ],
             "completed_topics": self.completed_topics,
             "current_goals": self.current_goals,
             "total_study_time_minutes": self.total_study_time_minutes,
+            "xp": self.xp,
+            "streak": self.streak,
+            "last_study_date": self.last_study_date,
+            "badges": self.badges,
+            "srs": self.srs,
         }
 
 
@@ -86,6 +98,7 @@ class MemoryBank:
         topic: str,
         score: float,
         questions_answered: int,
+        answers: Optional[List[Dict[str, Any]]] = None,
         date: Optional[str] = None,
     ) -> StudentProfile:
         """Append a quiz record to the student's history."""
@@ -95,6 +108,7 @@ class MemoryBank:
             score=score,
             date=date or datetime.utcnow().strftime("%Y-%m-%d"),
             questions_answered=questions_answered,
+            answers=answers or [],
         )
         profile.quiz_history.append(record)
         return profile
@@ -110,6 +124,18 @@ class MemoryBank:
         """Increment total study time for the student."""
         profile = self.get_or_create_student(student_id)
         profile.total_study_time_minutes += max(0, minutes)
+        return profile
+
+    def update_profile_fields(self, student_id: str, updates: Dict[str, Any]) -> StudentProfile:
+        """Merge arbitrary profile updates (e.g., SRS, gamification metrics)."""
+
+        profile = self.get_or_create_student(student_id)
+        for key, value in updates.items():
+            if hasattr(profile, key):
+                setattr(profile, key, value)
+            else:
+                # Store unknown keys in a generic attributes map if needed in future.
+                setattr(profile, key, value)
         return profile
 
     def to_dict(self, student_id: str) -> Dict[str, Any]:

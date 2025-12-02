@@ -20,7 +20,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from config import settings
-from memory.student_memory import GLOBAL_MEMORY_BANK
+from memory import get_memory_bank
 from tools.quiz_grader import grade_quiz, aggregate_quiz_results
 from tools.progress_tracker import calculate_progress
 
@@ -42,6 +42,8 @@ if adk is not None:
     # Tools as ADK tool funcs
     # -------------------------
 
+    MEMORY_BANK = get_memory_bank()
+
     @adk.tool()
     def adk_grade_quiz(student_answer: str, correct_answer: str, question_type: str) -> Dict[str, Any]:
         """Grade a single quiz question and return score + feedback."""
@@ -51,17 +53,17 @@ if adk is not None:
     @adk.tool()
     def adk_calculate_progress(student_id: str, topic: str) -> Dict[str, Any]:
         """Compute mastery percentage, weak areas, and suggested next step."""
-        return calculate_progress(GLOBAL_MEMORY_BANK, student_id, topic)
+        return calculate_progress(MEMORY_BANK, student_id, topic)
 
     # -------------------------
     # Sub-agents
     # -------------------------
 
-    assessor_helper = KnowledgeAssessor(GLOBAL_MEMORY_BANK)
+    assessor_helper = KnowledgeAssessor(MEMORY_BANK)
     quiz_helper = QuizGenerator()
     explainer_helper = Explainer()
     resource_helper = ResourceFinder()
-    coordinator_helper = Coordinator(GLOBAL_MEMORY_BANK)
+    coordinator_helper = Coordinator(MEMORY_BANK)
 
     knowledge_assessor_agent = adk.Agent(
         name="knowledge_assessor",

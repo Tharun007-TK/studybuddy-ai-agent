@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "title": "Implement Firestore-backed quiz flow with SRS persistence",
+      "status": "done"
+    },
+    {
+      "title": "Integrate spaced repetition and gamification into quiz grading",
+      "status": "done"
+    }
+  ]
+}

@@ -7,9 +7,18 @@ directly in tests and wrapped as an ADK tool in an agent.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
-from memory.student_memory import GLOBAL_MEMORY_BANK
+from memory import get_memory_bank
+from tools.gamification import add_xp, award_badge, update_streak
+from tools.spaced_repetition import schedule_next_review
+
+
+def _bank():
+    """Return the configured memory backend instance."""
+
+    return get_memory_bank()
 
 
 def grade_quiz(
@@ -100,11 +109,13 @@ def grade_quiz_session(
 
     question_scores: Dict[str, float] = {}
     feedback: List[Dict[str, Any]] = []
+    answers_snapshot: List[Dict[str, Any]] = []
     for entry in responses:
         qid = str(entry.get("question_id"))
         qtype = entry.get("question_type", "short_answer")
         student_answer = entry.get("student_answer", "")
         correct_answer = entry.get("correct_answer", "")
+        question_text = entry.get("question") or entry.get("prompt") or ""
         score, text = grade_quiz(student_answer, correct_answer, qtype)
         question_scores[qid] = score
         feedback.append(
@@ -114,22 +125,70 @@ def grade_quiz_session(
                 "notes": text,
             }
         )
+        answers_snapshot.append(
+            {
+                "question_id": qid,
+                "question_text": question_text,
+                "question_type": qtype,
+                "student_answer": student_answer,
+                "correct_answer": correct_answer,
+                "score": round(score, 2),
+                "feedback": text,
+            }
+        )
 
     overall = aggregate_quiz_results(question_scores)
-    GLOBAL_MEMORY_BANK.append_quiz_record(
+    memory_bank = _bank()
+
+    memory_bank.append_quiz_record(
         student_id=student_id,
         topic=topic,
         score=overall,
         questions_answered=len(responses),
+        answers=answers_snapshot,
     )
+
     if overall >= 0.85:
-        GLOBAL_MEMORY_BANK.mark_topic_completed(student_id, topic)
+        memory_bank.mark_topic_completed(student_id, topic)
+
+    profile_dict = memory_bank.to_dict(student_id)
+
+    # Update SRS schedule treating the topic as the review item.
+    srs_quality = max(0, min(5, round(overall * 5)))
+    srs_item = schedule_next_review(profile_dict, topic, quality=srs_quality)
+    srs_payload = dict(srs_item)
+
+    # Award XP and maintain streak information based on quiz effort.
+    study_minutes = max(1, len(responses) * 2)
+    xp_total = add_xp(profile_dict, study_minutes)
+    streak_total = update_streak(profile_dict, datetime.utcnow().strftime("%Y-%m-%d"))
+
+    badges: List[str] = profile_dict.get("badges", [])
+    if overall >= 0.9:
+        badges = award_badge(profile_dict, f"mastery_{topic}")
+
+    memory_bank.update_profile_fields(
+        student_id,
+        {
+            "srs": profile_dict.get("srs", {}),
+            "xp": xp_total,
+            "streak": streak_total,
+            "last_study_date": profile_dict.get("last_study_date"),
+            "badges": badges,
+        },
+    )
 
     return {
         "topic": topic,
         "score": round(overall, 3),
         "questions": feedback,
         "questions_answered": len(responses),
+        "srs": srs_payload,
+        "gamification": {
+            "xp": xp_total,
+            "streak": streak_total,
+            "badges": badges,
+        },
     }
 
 

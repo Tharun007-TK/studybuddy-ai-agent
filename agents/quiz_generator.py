@@ -24,28 +24,13 @@ multiple choice, short answer, and lightweight coding/math prompts.
 
 Workflow:
 1. Fetch the student profile and knowledge assessment from session state to understand level.
-2. Produce a JSON quiz blueprint with fields:
-   {{
-     "topic": "...",
-     "difficulty": "...",
-     "questions": [
-        {{
-          "question_id": "q1",
-          "question": "...",
-          "question_type": "multiple_choice|short_answer|coding",
-          "options": ["A) ...", ...]  # only when multiple_choice
-          "correct_answer": "..."
-        }}
-     ]
-   }}
-3. Present the quiz to the student and collect their answers in a structured format.
-4. Call `grade_quiz_session(student_id, topic, responses)` with the collected answers
-   (list of dicts with question_id, question_type, student_answer, correct_answer).
-5. If the score >= 0.85 call `record_topic_completion` to mark the topic complete.
-6. Return a friendly summary of the score plus recommended follow-up practice.
+2. Present quiz questions one at a time. After asking a question, wait for the student's answer before moving on.
+3. For each response, call `grade_quiz_session(student_id, topic, responses)` with a single-item list that includes the `question_id`, `question_type`, `student_answer`, and the authoritative `correct_answer` you generated.
+4. Share immediate feedback based on the grading result and decide whether to continue with another question.
+5. Once the quiz segment ends, summarize scores, highlight correct answers, and call `record_topic_completion` when mastery (score >= 0.85) is achieved.
 
 Always keep the quiz concise, focused, and grounded in the student's mastery level.
-Use your extensive knowledge base to create accurate, high-quality questions.
+Use your extensive knowledge base to create accurate, high-quality questions that include explicit correct answers for storage.
 
 Note: Web search is temporarily unavailable. Create questions based on your training data.
 """,

@@ -7,24 +7,25 @@ independent of the underlying storage mechanism.
 
 from __future__ import annotations
 
-from typing import Dict, Any
+from typing import Any, Dict
 
-from memory.student_memory import MemoryBank, GLOBAL_MEMORY_BANK
+from memory import get_memory_bank
 
 
-def calculate_progress(memory_bank: MemoryBank, student_id: str, topic: str) -> Dict[str, Any]:
+def calculate_progress(memory_bank: Any, student_id: str, topic: str) -> Dict[str, Any]:
     """
     Calculate mastery percentage, weak areas and suggested next steps.
 
     For the capstone we derive a simple mastery score from recent quiz
     history on the given topic.
     """
-    profile = memory_bank.get_or_create_student(student_id)
-    relevant_quizzes = [q for q in profile.quiz_history if q.topic == topic]
+    profile = memory_bank.to_dict(student_id)
+    quiz_history = profile.get("quiz_history", [])
+    relevant_quizzes = [q for q in quiz_history if q.get("topic") == topic]
     if not relevant_quizzes:
         mastery = 0.0
     else:
-        mastery = sum(q.score for q in relevant_quizzes) / len(relevant_quizzes)
+        mastery = sum(float(q.get("score", 0.0)) for q in relevant_quizzes) / len(relevant_quizzes)
 
     weak_areas = []
     if mastery < 0.4:
@@ -51,6 +52,6 @@ def progress_tracker_tool(student_id: str, topic: str) -> Dict[str, Any]:
     """
     ADK-friendly wrapper around ``calculate_progress`` that relies on the global memory bank.
     """
-    return calculate_progress(GLOBAL_MEMORY_BANK, student_id, topic)
+    return calculate_progress(get_memory_bank(), student_id, topic)
 
 

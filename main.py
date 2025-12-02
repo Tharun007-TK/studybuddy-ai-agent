@@ -3,13 +3,21 @@ Streamlit UI for the StudyBuddy ADK agent.
 """
 
 import asyncio
+from datetime import datetime
+from typing import Dict, List
+
+import pandas as pd
 import streamlit as st
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types as genai_types
+
 from agents import root_agent
+from memory import get_memory_bank
+from tools.progress_exporter import export_csv
 
 APP_NAME = "studybuddy_ai"
+MEMORY_BANK = get_memory_bank()
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -53,6 +61,42 @@ if "runner" not in st.session_state:
         app_name=APP_NAME,
         session_service=st.session_state.session_service,
     )
+
+
+def _load_student_profile(student_id: str) -> Dict:
+    """Return the latest profile snapshot for the student."""
+
+    try:
+        return MEMORY_BANK.to_dict(student_id)
+    except Exception:
+        return {}
+
+
+def _upcoming_reviews(profile: Dict) -> List[Dict]:
+    """Return upcoming SRS reviews sorted by next_review date."""
+
+    srs_map = profile.get("srs", {}) or {}
+    rows: List[Dict] = []
+    for item_id, data in srs_map.items():
+        next_review = data.get("next_review")
+        try:
+            sort_key = datetime.strptime(next_review, "%Y-%m-%d") if next_review else None
+        except Exception:
+            sort_key = None
+        rows.append(
+            {
+                "Item": item_id,
+                "Interval (days)": data.get("interval_days"),
+                "Repetitions": data.get("repetitions"),
+                "E-Factor": data.get("efactor"),
+                "Next Review": next_review,
+                "_sort": sort_key,
+            }
+        )
+    rows.sort(key=lambda row: (row.get("_sort") or datetime.max))
+    for row in rows:
+        row.pop("_sort", None)
+    return rows
 
 
 async def ensure_session(user_id: str, session_id: str):
@@ -102,10 +146,7 @@ async def get_agent_response(user_id: str, session_id: str, message: str):
     await ensure_session(user_id, session_id)
     runner = st.session_state.runner
     full_response = ""
-    
-    # Create a placeholder for the streaming response
-    message_placeholder = st.empty()
-    
+
     async for event in runner.run_async(
         user_id=user_id,
         session_id=session_id,
@@ -114,17 +155,16 @@ async def get_agent_response(user_id: str, session_id: str, message: str):
             parts=[genai_types.Part.from_text(text=message)],
         ),
     ):
-        if event.is_final_response() and event.content and event.content.parts:
-            chunk_text = event.content.parts[0].text or ""
-            full_response = chunk_text # The ADK runner yields the full response at the end for now in this setup
-            # If we want true streaming token by token, we'd need to adjust how we consume the runner events
-            # For now, let's assume the event gives us the final text or we accumulate if it was streaming parts.
-            # Based on original code: yield event.content.parts[0].text or ""
-            # The original code yielded the final response.
-            
-            # Let's just update the placeholder with what we have
-            message_placeholder.markdown(full_response)
-            
+        if not event.content or not event.content.parts:
+            continue
+
+        # Some events may stream partial content; join available text parts.
+        part_text = "".join(part.text or "" for part in event.content.parts)
+        if event.is_final_response():
+            full_response = part_text
+        elif part_text:
+            full_response += part_text
+
     return full_response
 
 
@@ -151,6 +191,39 @@ def main():
             "summarize materials, and stay on top of your academic tasks."
         )
 
+        profile = st.session_state.get("profile_snapshot")
+        if profile and profile.get("student_id") != student_id:
+            profile = None
+
+        if profile is None:
+            profile = _load_student_profile(student_id)
+            st.session_state.profile_snapshot = profile
+        if profile:
+            st.markdown("---")
+            st.markdown("### Progress Snapshot")
+            col1, col2 = st.columns(2)
+            col1.metric("XP", profile.get("xp", 0))
+            col2.metric("Streak", profile.get("streak", 0))
+            st.caption(f"Last study date: {profile.get('last_study_date') or '—'}")
+
+            if profile.get("quiz_history"):
+                with st.expander("Recent Quizzes", expanded=False):
+                    df = pd.DataFrame(profile["quiz_history"]).sort_values("date", ascending=False)
+                    st.dataframe(df, use_container_width=True, hide_index=True)
+
+            upcoming = _upcoming_reviews(profile)
+            if upcoming:
+                with st.expander("Upcoming Reviews", expanded=False):
+                    st.dataframe(pd.DataFrame(upcoming), use_container_width=True, hide_index=True)
+
+            csv_payload = export_csv(profile)
+            st.download_button(
+                "Download Progress CSV",
+                data=csv_payload,
+                file_name=f"{student_id}_progress.csv",
+                mime="text/csv",
+            )
+
     # --- Chat Interface ---
     
     # Display chat messages from history on app rerun
@@ -167,28 +240,43 @@ def main():
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Display assistant response in chat message container
         with st.chat_message("assistant"):
-            # Run the async generator in the event loop
-            response_text = asyncio.run(
-                get_agent_response(student_id, session_id, prompt)
-            )
-            # If the response wasn't streamed into the placeholder above (because we used st.empty() inside the function but we are inside a with block here),
-            # we might want to ensure it's displayed correctly. 
-            # Actually, `get_agent_response` uses `st.empty()` which writes to the main area. 
-            # To write INSIDE this `with st.chat_message("assistant"):` block, we should pass the container or handle it here.
-            
-            # Let's refactor slightly to be cleaner for Streamlit's execution model
-            # We'll just display the final result here since the async loop handles the "streaming" visual if we did it right,
-            # but `asyncio.run` blocks. 
-            # So for a true async stream in Streamlit we usually need a bit more setup or just wait for the result.
-            # Given the original code was a simple loop, let's stick to simple blocking for now but show a spinner.
-            
-            if not response_text:
-                 st.markdown(response_text) # Re-render if needed or just rely on the side-effect if we fix the function.
+            with st.spinner("Thinking..."):
+                response_text = asyncio.run(
+                    get_agent_response(student_id, session_id, prompt)
+                )
+            st.markdown(response_text or "_No response received._")
 
-        # Add assistant response to chat history
         st.session_state.messages.append({"role": "assistant", "content": response_text})
+        st.session_state["profile_snapshot"] = _load_student_profile(student_id)
+
+    # Latest quiz feedback (shows correct answers after grading)
+    profile_snapshot = st.session_state.get("profile_snapshot")
+    latest_quiz = None
+    if profile_snapshot and profile_snapshot.get("quiz_history"):
+        latest_quiz = profile_snapshot["quiz_history"][-1]
+
+    if latest_quiz and latest_quiz.get("answers"):
+        st.markdown("---")
+        st.subheader("Latest Quiz Review")
+        st.caption(
+            "Correct answers are highlighted after each submission so you can reflect immediately."
+        )
+        for answer in latest_quiz["answers"]:
+            question_label = answer.get("question_id") or "Question"
+            header = answer.get("question_text") or question_label
+            with st.expander(f"{header} ({answer.get('question_type', 'unknown')})", expanded=False):
+                st.markdown(
+                    f"**Question ID:** {question_label}\n\n"
+                    f"**Your answer:** {answer.get('student_answer', '')}\n\n"
+                    f"**Correct answer:** {answer.get('correct_answer', '')}\n\n"
+                    f"**Result:** {answer.get('score', 0)} — {answer.get('feedback', '')}"
+                )
+
+
+# Ensure profile snapshot is initialized for sidebar display on first load
+if "profile_snapshot" not in st.session_state:
+    st.session_state.profile_snapshot = _load_student_profile("demo_student")
 
 
 if __name__ == "__main__":

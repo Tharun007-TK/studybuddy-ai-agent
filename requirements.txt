@@ -5,5 +5,14 @@ rich>=13.9.0
 pytest>=8.0.0
 streamlit>=1.32.0
 watchdog
+pandas>=2.0.0
+
+# Optional dependencies for new features
+# Firestore/Spanner persistence and exports/voice
+google-cloud-firestore>=2.10.0
+google-cloud-spanner>=3.14.0
+reportlab>=4.0.0
+pyttsx3>=2.90
+SpeechRecognition>=3.8.1
 
 
