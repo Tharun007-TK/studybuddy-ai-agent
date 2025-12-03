@@ -1,10 +1,8 @@
-# ScholarFlow AI – Personalized Learning Assistant
+![Study Buddy AI Banner](banner.png)
 
-ScholarFlow AI (formerly StudyBuddy AI) is an adaptive, Google ADK-powered learning assistant built for the Google AI Agents Capstone (Agents for Good). It personalizes study sessions by diagnosing the learner, explaining concepts using their preferred style, generating/grading targeted quizzes, curating fresh resources, and persisting mastery metrics in a Memory Bank.
+# Study Buddy AI 🎓
 
-The ADK wiring follows the same multi-agent pattern showcased in Google's Agent Shutton sample ([link](https://github.com/cloude-google/agent-shutton#)) but focuses on tutoring instead of blogging.
-
----
+**Study Buddy AI** is a personalized, multi-agent tutoring system powered by the **Google Agent Development Kit (ADK)** and **Gemini 2.0 Flash**. It goes beyond simple Q&A by actively assessing your knowledge, adapting explanations to your learning style, and tracking your progress over time.
 
 ### Problem Statement
 
@@ -12,35 +10,9 @@ Students are forced to rely on generic, one-size-fits-all materials that ignore 
 
 ### Solution Architecture
 
-StudyBuddy AI coordinates a team of Gemini agents via Google ADK:
+Study Buddy AI coordinates a team of Gemini agents via Google ADK:
 
-```
-┌──────────────────────────────────────────────────────┐
-│                     End User                         │
-└──────────────┬───────────────────────────────────────┘
-               ↓
-┌──────────────────────────────────────────────────────┐
-│           StudyBuddy Coordinator Agent               │
-│  - Collects student_id / subject / goals             │
-│  - Routes turns across specialist agents             │
-│  - Calls custom tools (memory, grading, progress)    │
-└───────┬───────────────┬───────────────┬──────────────┘
-        │               │               │
-        ↓               ↓               ↓
-┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌───────────────┐
-│ Knowledge    │ │ Explanation  │ │ Quiz         │ │ Resource       │
-│ Assessor     │ │ Agent        │ │ Generator    │ │ Finder         │
-│ (GoogleSearch│ │ (style-aware │ │ (quiz+grade) │ │ (GoogleSearch) │
-│  + memory)   │ │  teaching)   │ │              │ │               │
-└──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────┬────────┘
-       ↓                ↓                ↓                ↓
-           ┌────────────────────────────────────────┐
-           │        Memory Bank + Tools             │
-           │  - InMemorySessionService (ADK)        │
-           │  - Student profiles & quiz history     │
-           │  - Quiz grader & progress tracker      │
-           └────────────────────────────────────────┘
-```
+![Study Buddy AI Architecture](flow_diagram_16_9.png)
 
 **Agents & Responsibilities**
 
@@ -93,18 +65,6 @@ StudyBuddy AI coordinates a team of Gemini agents via Google ADK:
    
    **Important:** Use `gemini-2.0-flash-001`, `gemini-1.5-flash`, or `gemini-1.5-pro` for stable function calling support. The experimental `gemini-2.0-flash-exp` model does not support function calling with google_search. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for details.
    
-   (Optional) Set `GOOGLE_CLOUD_PROJECT` / `GOOGLE_GENAI_USE_VERTEXAI` if you prefer Vertex AI credentials like the Agent Shutton sample.
-
-3. **Run the Application**
-   ```bash
-   streamlit run main.py
-   ```
-   This will launch the ScholarFlow AI web interface in your default browser.
-   
-   - Enter your **Student ID** (e.g., `alice123`) and **Session ID**.
-   - Start chatting with the agent to get personalized study help.
-
-
 ---
 
 ### Troubleshooting

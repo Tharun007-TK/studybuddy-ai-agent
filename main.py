@@ -6,6 +6,7 @@ import asyncio
 from datetime import datetime
 from typing import Dict, List
 
+import os
 import pandas as pd
 import streamlit as st
 from google.adk.runners import Runner
@@ -15,14 +16,14 @@ from google.genai import types as genai_types
 from agents import root_agent
 from memory import get_memory_bank
 from tools.progress_exporter import export_csv
-
-APP_NAME = "studybuddy_ai"
+APP_NAME = "agents"
+print(f"DEBUG: APP_NAME={APP_NAME}")
 MEMORY_BANK = get_memory_bank()
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="ScholarFlow AI",
-    page_icon="🧠",
+    page_title="Study Buddy AI",
+    page_icon="🎓",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -169,7 +170,7 @@ async def get_agent_response(user_id: str, session_id: str, message: str):
 
 
 def main():
-    st.title("🧠 ScholarFlow AI")
+    st.title("🧠 Study Buddy AI")
     st.caption("Your Personal Academic Assistant")
 
     # --- Sidebar ---
@@ -177,6 +178,12 @@ def main():
         st.header("Configuration")
         student_id = st.text_input("Student ID", value="demo_student", help="Enter your unique student identifier.")
         session_id = st.text_input("Session ID", value="demo_session", help="Enter a session identifier.")
+        
+        with st.expander("⚙️ Settings"):
+            api_key = st.text_input("Google API Key", type="password", help="Enter your Google API Key (overrides .env)")
+            if api_key:
+                os.environ["GOOGLE_API_KEY"] = api_key
+
         
         if st.button("Reset Session", type="primary"):
             st.session_state.messages = []
@@ -187,7 +194,7 @@ def main():
         st.markdown("---")
         st.markdown("### About")
         st.markdown(
-            "ScholarFlow AI helps you organize your study schedule, "
+            "Study Buddy AI helps you organize your study schedule, "
             "summarize materials, and stay on top of your academic tasks."
         )
 
@@ -227,8 +234,30 @@ def main():
     # --- Chat Interface ---
     
     # Display chat messages from history on app rerun
+    if not st.session_state.messages:
+        with st.chat_message("assistant", avatar="🧠"):
+            st.markdown(
+                f"**Hello! I'm Study Buddy AI.** 👋\n\n"
+                "I can help you organize your studies, quiz you on topics, "
+                "or find resources. What would you like to do today?"
+            )
+        
+        # Suggestion chips
+        col1, col2, col3 = st.columns(3)
+        if col1.button("📚 Help me study", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "I need help studying a new topic."})
+            st.rerun()
+        if col2.button("📝 Take a quiz", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "I want to take a quiz."})
+            st.rerun()
+        if col3.button("📊 Check progress", use_container_width=True):
+            st.session_state.messages.append({"role": "user", "content": "Show me my progress."})
+            st.rerun()
+
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
+        role = message["role"]
+        avatar = "🧠" if role == "assistant" else "👤"
+        with st.chat_message(role, avatar=avatar):
             st.markdown(message["content"])
 
     # Accept user input
@@ -237,10 +266,14 @@ def main():
         st.session_state.messages.append({"role": "user", "content": prompt})
         
         # Display user message in chat message container
-        with st.chat_message("user"):
+        with st.chat_message("user", avatar="👤"):
             st.markdown(prompt)
 
-        with st.chat_message("assistant"):
+        with st.chat_message("assistant", avatar="🧠"):
+            if not os.environ.get("GOOGLE_API_KEY"):
+                st.error("⚠️ Please enter your Google API Key in the sidebar configuration to continue.")
+                st.stop()
+
             with st.spinner("Thinking..."):
                 response_text = asyncio.run(
                     get_agent_response(student_id, session_id, prompt)
