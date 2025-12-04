@@ -56,12 +56,7 @@ if "messages" not in st.session_state:
 if "session_service" not in st.session_state:
     st.session_state.session_service = InMemorySessionService()
 
-if "runner" not in st.session_state:
-    st.session_state.runner = Runner(
-        agent=root_agent,
-        app_name=APP_NAME,
-        session_service=st.session_state.session_service,
-    )
+# Runner initialization is now handled in main() to ensure API key is present.
 
 
 def _load_student_profile(student_id: str) -> Dict:
@@ -189,6 +184,8 @@ def main():
             st.session_state.messages = []
             # In a real app, we might want to clear the backend session too
             # asyncio.run(st.session_state.session_service.delete_session(...)) 
+            if "runner" in st.session_state:
+                del st.session_state["runner"]
             st.rerun()
             
         st.markdown("---")
@@ -231,6 +228,35 @@ def main():
                 mime="text/csv",
             )
 
+    # --- Runner Initialization ---
+    # Initialize runner only if API key is present and runner is not yet created
+    if os.environ.get("GOOGLE_API_KEY") and "runner" not in st.session_state:
+        import importlib
+        import agents.assessor
+        import agents.explainer
+        import agents.quiz_generator
+        import agents.resource_finder
+        import agents.coordinator
+        import agents
+
+        # Reload modules to ensure Agents are re-instantiated with the API key
+        importlib.reload(agents.assessor)
+        importlib.reload(agents.explainer)
+        importlib.reload(agents.quiz_generator)
+        importlib.reload(agents.resource_finder)
+        importlib.reload(agents.coordinator)
+        importlib.reload(agents)
+        
+        # Re-import root_agent after reload
+        from agents import root_agent
+
+        st.session_state.runner = Runner(
+            agent=root_agent,
+            app_name=APP_NAME,
+            session_service=st.session_state.session_service,
+        )
+
+
     # --- Chat Interface ---
     
     # Display chat messages from history on app rerun
@@ -264,10 +290,13 @@ def main():
     if prompt := st.chat_input("Ask for help with your studies..."):
         # Add user message to chat history
         st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        # Display user message in chat message container
-        with st.chat_message("user", avatar="👤"):
-            st.markdown(prompt)
+        st.rerun()
+
+    # Check if the last message is from the user and needs a response
+    if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+        # Display the last user message (it's already in the loop above, but we need to ensure the spinner is shown)
+        # Actually, the loop above 'for message in st.session_state.messages' already displayed it.
+        # We just need to generate the response now.
 
         with st.chat_message("assistant", avatar="🧠"):
             if not os.environ.get("GOOGLE_API_KEY"):
@@ -276,12 +305,13 @@ def main():
 
             with st.spinner("Thinking..."):
                 response_text = asyncio.run(
-                    get_agent_response(student_id, session_id, prompt)
+                    get_agent_response(student_id, session_id, st.session_state.messages[-1]["content"])
                 )
             st.markdown(response_text or "_No response received._")
 
         st.session_state.messages.append({"role": "assistant", "content": response_text})
         st.session_state["profile_snapshot"] = _load_student_profile(student_id)
+        st.rerun()
 
     # Latest quiz feedback (shows correct answers after grading)
     profile_snapshot = st.session_state.get("profile_snapshot")
