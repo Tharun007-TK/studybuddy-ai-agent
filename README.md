@@ -12,7 +12,7 @@ Students are forced to rely on generic, one-size-fits-all materials that ignore 
 
 Study Buddy AI coordinates a team of Gemini agents via Google ADK:
 
-![Study Buddy AI Architecture](flow_diagram_16_9.png)
+![Study Buddy AI Architecture](flow_diagram.png)
 
 **Agents & Responsibilities**
 
